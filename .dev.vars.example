@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+#
+# Server keys are used only when ALLOW_SERVER_KEYS is "true" (set it here to
+# override wrangler.jsonc locally). Otherwise visitors bring their own keys in
+# the UI. Workers AI needs no key: it uses the `AI` binding.
+
+ALLOW_SERVER_KEYS="false"
+# ANTHROPIC_API_KEY=""
+# OPENAI_API_KEY=""
+# GEMINI_API_KEY=""

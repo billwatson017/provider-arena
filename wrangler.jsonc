@@ -1,0 +1,43 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "provider-arena",
+	"compatibility_date": "2026-10-19",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"main": "@tanstack/react-start/server-entry",
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	/**
+	 * Workers AI — the free, no-key column in the arena.
+	 * https://developers.cloudflare.com/workers-ai/configuration/bindings/
+	 */
+	"ai": {
+		"binding": "AI"
+	},
+	/**
+	 * Per-IP rate limit on /api/chat so a public demo can't drain the account.
+	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+	 */
+	"ratelimits": [
+		{
+			"name": "CHAT_LIMITER",
+			"namespace_id": "1001",
+			"simple": { "limit": 20, "period": 60 }
+		}
+	],
+	"vars": {
+		/**
+		 * "true" lets paid providers fall back to server secrets
+		 * (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) when a visitor
+		 * has not brought their own key. Leave "false" on a public deploy.
+		 */
+		"ALLOW_SERVER_KEYS": "false"
+	}
+}
