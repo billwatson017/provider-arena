@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 import { chatParamsFromRequest } from '@tanstack/ai'
-import { findModel } from '#/lib/models'
+import { findModel, isReasoningChoice } from '#/lib/models'
 import { streamArenaChat } from '#/server/arena'
 
 export const Route = createFileRoute('/api/chat')({
@@ -29,6 +29,9 @@ export const Route = createFileRoute('/api/chat')({
           model,
           messages: params.messages,
           threadId: params.threadId,
+          reasoning: isReasoningChoice(params.forwardedProps.reasoning)
+            ? params.forwardedProps.reasoning
+            : 'default',
         })
       },
     },

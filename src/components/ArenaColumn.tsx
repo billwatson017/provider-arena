@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ComponentProps } from 'react'
 import { fetchServerSentEvents, useByok, useChat } from '@tanstack/ai-react'
 import type { StreamChunk } from '@tanstack/ai'
@@ -8,7 +8,7 @@ import { byok } from '#/lib/byok'
 import { MODELS, PRICES_AS_OF, PROVIDERS } from '#/lib/models'
 import { formatUsd, readUsage, summarize } from '#/lib/metrics'
 import type { MetricKey, RunMetrics, RunSummary } from '#/lib/metrics'
-import type { ArenaModel, ArenaModelId } from '#/lib/models'
+import type { ArenaModel, ArenaModelId, ReasoningChoice } from '#/lib/models'
 
 export interface Round {
   id: number
@@ -19,6 +19,7 @@ interface ArenaColumnProps {
   model: ArenaModel
   round: Round | null
   stopSignal: number
+  reasoning: ReasoningChoice
   /** The server holds a key for this provider, so no visitor key is needed. */
   covered: boolean
   canRemove: boolean
@@ -37,6 +38,7 @@ export function ArenaColumn({
   model,
   round,
   stopSignal,
+  reasoning,
   covered,
   canRemove,
   wins,
@@ -50,11 +52,15 @@ export function ArenaColumn({
   const [threadCost, setThreadCost] = useState({ usd: 0, runs: 0 })
   const keys = useByok(byok)
 
+  const forwardedProps = useMemo(
+    () => ({ provider: model.provider, model: model.id, reasoning }),
+    [model, reasoning],
+  )
   const { messages, sendMessage, reload, stop, isLoading, error } = useChat({
     connection: fetchServerSentEvents('/api/chat'),
     threadId,
     byok,
-    forwardedProps: { provider: model.provider, model: model.id },
+    forwardedProps,
     onChunk: (chunk: StreamChunk) => {
       const now = performance.now()
       if (CONTENT_CHUNKS.has(chunk.type)) {

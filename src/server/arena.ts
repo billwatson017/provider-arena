@@ -12,7 +12,7 @@ import { geminiByok } from '@tanstack/ai-gemini/byok'
 import { createOpenaiChat } from '@tanstack/ai-openai'
 import { openaiByok } from '@tanstack/ai-openai/byok'
 import { MAX_OUTPUT_TOKENS } from '#/lib/models'
-import type { ArenaModel } from '#/lib/models'
+import type { ArenaModel, ReasoningChoice } from '#/lib/models'
 
 // The adapter is typed against its own copy of @cloudflare/workers-types, which
 // differs from the runtime types `wrangler types` generates only in DOM event
@@ -30,6 +30,7 @@ interface ArenaRequest {
   model: ArenaModel
   messages: Array<UIMessage | ModelMessage>
   threadId: string
+  reasoning: ReasoningChoice
 }
 
 export function serverKeysAllowed() {
@@ -45,13 +46,16 @@ function providerKey(request: Request, provider: ByokProvider) {
   return getByokKey(request, serverKeysAllowed() ? provider : provider.id)
 }
 
-export function streamArenaChat({ request, model, messages, threadId }: ArenaRequest): Response {
+export function streamArenaChat({ request, model, messages, threadId, reasoning }: ArenaRequest): Response {
   const abortController = new AbortController()
   const common = {
     messages: messages.slice(-MAX_HISTORY),
     threadId,
     systemPrompts: [SYSTEM_PROMPT],
     abortController,
+    // `reasoning` is typed per model, but the arena sends one level to all of
+    // them. TanStack AI clamps it to the nearest level each model supports.
+    ...(reasoning !== 'default' && { reasoning: reasoning as never }),
   }
 
   switch (model.provider) {
@@ -59,7 +63,12 @@ export function streamArenaChat({ request, model, messages, threadId }: ArenaReq
       const stream = chat({
         adapter: createCloudflareText(model.id, { binding: workersAi() }),
         ...common,
-        modelOptions: { max_tokens: MAX_OUTPUT_TOKENS },
+        modelOptions: {
+          max_tokens: MAX_OUTPUT_TOKENS,
+          // Some Workers AI models (Gemma, Qwen) ignore `reasoning_effort: null`
+          // and only stop thinking through their chat template.
+          ...(reasoning === 'off' && { chat_template_kwargs: { enable_thinking: false } }),
+        },
       })
       return toServerSentEventsResponse(stream, { abortController })
     }

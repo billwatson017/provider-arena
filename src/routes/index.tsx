@@ -6,8 +6,8 @@ import { KeysPanel } from '#/components/KeysPanel'
 import { byok } from '#/lib/byok'
 import { METRIC_LABELS, roundWinners } from '#/lib/metrics'
 import type { MetricKey, RunSummary } from '#/lib/metrics'
-import { DEFAULT_COLUMNS, MAX_COLUMNS, MODELS, findModel } from '#/lib/models'
-import type { ArenaModelId } from '#/lib/models'
+import { DEFAULT_COLUMNS, MAX_COLUMNS, MODELS, REASONING_CHOICES, findModel } from '#/lib/models'
+import type { ArenaModelId, ReasoningChoice } from '#/lib/models'
 import { getServerCoverage } from '#/server/coverage'
 
 export const Route = createFileRoute('/')({
@@ -32,6 +32,7 @@ function Arena() {
   const [round, setRound] = useState<Round | null>(null)
   const [stopSignal, setStopSignal] = useState(0)
   const [generation, setGeneration] = useState(0)
+  const [reasoning, setReasoning] = useState<ReasoningChoice>('default')
   const [results, setResults] = useState<Record<string, ColumnResult>>({})
 
   // Winners are decided once every column that ran this round has settled.
@@ -117,7 +118,33 @@ function Arena() {
             className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm placeholder:text-muted focus:outline-none"
           />
           <div className="flex items-center gap-2 px-2 pb-2">
-            <span className="hidden text-xs text-muted sm:inline">
+            <fieldset className="m-0 flex items-center gap-1 border-0 p-0">
+              <legend className="sr-only">Reasoning effort</legend>
+              <span className="mr-1 text-xs text-muted" title="Sent to every model; each uses the nearest level it supports.">
+                Reasoning
+              </span>
+              <div className="flex rounded-md border border-border p-0.5">
+                {REASONING_CHOICES.map((choice) => (
+                  <label
+                    key={choice}
+                    className={`cursor-pointer rounded px-1.5 py-0.5 font-mono text-[0.7rem] ${
+                      reasoning === choice ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="reasoning"
+                      value={choice}
+                      checked={reasoning === choice}
+                      onChange={() => setReasoning(choice)}
+                      className="sr-only"
+                    />
+                    {choice}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <span className="hidden text-xs text-muted xl:inline">
               <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for a new line
             </span>
             <div className="ml-auto flex gap-2">
@@ -167,6 +194,7 @@ function Arena() {
               model={model}
               round={round}
               stopSignal={stopSignal}
+              reasoning={reasoning}
               covered={coverage[model.provider]}
               canRemove={columns.length > 1}
               wins={winners.get(col.key) ?? []}
