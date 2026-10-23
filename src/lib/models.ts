@@ -61,5 +61,17 @@ export function estimateCost(model: ArenaModel, inputTokens: number, outputToken
   return (inputTokens * model.price.input + outputTokens * model.price.output) / 1_000_000
 }
 
+/**
+ * One reasoning control for every column. TanStack AI clamps each level to
+ * the nearest one the model supports, so models with fewer levels still
+ * get a sensible setting. `default` leaves the option unset.
+ */
+export const REASONING_CHOICES = ['default', 'off', 'low', 'medium', 'high'] as const
+export type ReasoningChoice = (typeof REASONING_CHOICES)[number]
+
+export function isReasoningChoice(value: unknown): value is ReasoningChoice {
+  return REASONING_CHOICES.includes(value as ReasoningChoice)
+}
+
 export const MAX_COLUMNS = 4
 export const MAX_OUTPUT_TOKENS = 2048

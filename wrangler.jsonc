@@ -32,6 +32,19 @@
 			"simple": { "limit": 20, "period": 60 }
 		}
 	],
+	/**
+	 * Blind-mode votes for the leaderboard. Local dev works with the
+	 * placeholder id; before deploying run `npx wrangler d1 create
+	 * provider-arena` and paste the real database_id here.
+	 */
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "provider-arena",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
 	"vars": {
 		/**
 		 * "true" lets paid providers fall back to server secrets

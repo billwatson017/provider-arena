@@ -12,7 +12,9 @@ import { geminiByok } from '@tanstack/ai-gemini/byok'
 import { createOpenaiChat } from '@tanstack/ai-openai'
 import { openaiByok } from '@tanstack/ai-openai/byok'
 import { MAX_OUTPUT_TOKENS } from '#/lib/models'
-import type { ArenaModel } from '#/lib/models'
+import type { ArenaModel, ReasoningChoice } from '#/lib/models'
+import { InvoiceSchema } from '#/lib/invoice'
+import { ARENA_TOOLS } from './tools'
 
 // The adapter is typed against its own copy of @cloudflare/workers-types, which
 // differs from the runtime types `wrangler types` generates only in DOM event
@@ -22,6 +24,9 @@ const workersAi = () => env.AI as unknown as CloudflareBindingConfig['binding']
 const SYSTEM_PROMPT =
   'You are one contestant in a side-by-side model comparison. Answer the user directly and concisely.'
 
+const TOOLS_PROMPT =
+  'You have tools for weather, currency conversion and order lookup. Use them for any facts they cover instead of guessing.'
+
 /** Only the most recent turns are sent, which bounds the cost of a long thread. */
 const MAX_HISTORY = 12
 
@@ -30,6 +35,11 @@ interface ArenaRequest {
   model: ArenaModel
   messages: Array<UIMessage | ModelMessage>
   threadId: string
+  reasoning: ReasoningChoice
+  /** Give the model the test tool kit (weather, currency, orders). */
+  tools: boolean
+  /** Ask for the invoice schema instead of free text. */
+  schema: boolean
 }
 
 export function serverKeysAllowed() {
@@ -45,13 +55,28 @@ function providerKey(request: Request, provider: ByokProvider) {
   return getByokKey(request, serverKeysAllowed() ? provider : provider.id)
 }
 
-export function streamArenaChat({ request, model, messages, threadId }: ArenaRequest): Response {
+export function streamArenaChat({
+  request,
+  model,
+  messages,
+  threadId,
+  reasoning,
+  tools,
+  schema,
+}: ArenaRequest): Response {
   const abortController = new AbortController()
   const common = {
     messages: messages.slice(-MAX_HISTORY),
     threadId,
-    systemPrompts: [SYSTEM_PROMPT],
+    systemPrompts: tools ? [SYSTEM_PROMPT, TOOLS_PROMPT] : [SYSTEM_PROMPT],
+    ...(tools && { tools: ARENA_TOOLS }),
+    // Structured output streams the JSON as it's generated; the client gets a
+    // typed `structured-output` part with `partial` and, at the end, `data`.
+    ...(schema && { outputSchema: InvoiceSchema, stream: true as const }),
     abortController,
+    // `reasoning` is typed per model, but the arena sends one level to all of
+    // them. TanStack AI clamps it to the nearest level each model supports.
+    ...(reasoning !== 'default' && { reasoning: reasoning as never }),
   }
 
   switch (model.provider) {
@@ -59,7 +84,12 @@ export function streamArenaChat({ request, model, messages, threadId }: ArenaReq
       const stream = chat({
         adapter: createCloudflareText(model.id, { binding: workersAi() }),
         ...common,
-        modelOptions: { max_tokens: MAX_OUTPUT_TOKENS },
+        modelOptions: {
+          max_tokens: MAX_OUTPUT_TOKENS,
+          // Some Workers AI models (Gemma, Qwen) ignore `reasoning_effort: null`
+          // and only stop thinking through their chat template.
+          ...(reasoning === 'off' && { chat_template_kwargs: { enable_thinking: false } }),
+        },
       })
       return toServerSentEventsResponse(stream, { abortController })
     }

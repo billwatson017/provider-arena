@@ -18,6 +18,10 @@ call. Nothing else changes between providers.
 | AG-UI request parsing with `chatParamsFromRequest` and `forwardedProps` | [`src/routes/api.chat.ts`](src/routes/api.chat.ts) |
 | Bring your own key (`defineByok`, `useByok`, `getByokKey`, `byokMissing`) | [`src/lib/byok.ts`](src/lib/byok.ts), [`src/components/KeysPanel.tsx`](src/components/KeysPanel.tsx) |
 | Reasoning parts rendered separately from answers | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
+| Shared reasoning effort via `chat({ reasoning })`, clamped per model | [`src/server/arena.ts`](src/server/arena.ts) |
+| Tool calling with shared `toolDefinition().server()` tools and the built-in agent loop | [`src/server/tools.ts`](src/server/tools.ts) |
+| Streaming structured output (`outputSchema` + `stream: true`) rendered from the typed `structured-output` part | [`src/lib/invoice.ts`](src/lib/invoice.ts) |
+| Blind voting through TanStack Start server functions + D1, Elo leaderboard | [`src/server/votes.ts`](src/server/votes.ts), [`src/lib/elo.ts`](src/lib/elo.ts) |
 | Time to first token, total time, tokens/s and cost from stream chunks | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
 
 ## Models
@@ -48,6 +52,33 @@ breakdown.
 - The estimate ignores prompt-cache discounts, and reasoning tokens count as
   output. Update the prices (and `PRICES_AS_OF`) when providers change them.
 
+## Tool-calling test
+
+Turn on **tools** and every model gets the same three server tools: weather,
+currency conversion and order lookup. They return fixed fake data, so you can
+check each answer against the facts. Tool calls render inline with their
+arguments and results, and the sample prompts include a trap ("weather in
+Berlin", a city the tool doesn't know) to see which models admit it and which
+invent a forecast.
+
+## Structured-output test
+
+Turn on **schema** and every model extracts an invoice into the same Zod
+schema, streamed field by field. Each column reports whether the result
+matches the schema and, for the two sample invoices, how many fields match
+the answer key (text compared loosely, numbers to the cent, line items by
+their sum). The messy-email sample has a UK-format date that several models
+get wrong.
+
+## Blind mode and the leaderboard
+
+Turn on **Blind mode** and every send shuffles a random lineup of models you
+can run, hides their names, and starts each column fresh. When all columns
+finish, vote for the best answer (or a tie) to reveal the names. Votes are
+stored in D1, and `/leaderboard` recomputes Elo ratings from them: in a three-
+or four-way round the winner beats each other model, and a tie draws every
+pair. Only blind votes are recorded, so ratings aren't swayed by brand names.
+
 ## Keys and cost safety
 
 This is meant to be deployed publicly, so by default it never spends your
@@ -68,6 +99,7 @@ provider keys:
 npm install
 npx wrangler login        # Workers AI calls your account even in local dev
 cp .dev.vars.example .dev.vars
+npx wrangler d1 migrations apply provider-arena --local
 npm run dev               # http://localhost:3000
 ```
 
@@ -75,7 +107,12 @@ After changing bindings in `wrangler.jsonc`, run `npm run cf-typegen`.
 
 ## Deploy
 
+Create the D1 database once and put its id in `wrangler.jsonc` (the
+committed id is a placeholder that only works locally):
+
 ```bash
+npx wrangler d1 create provider-arena
+npx wrangler d1 migrations apply provider-arena --remote
 npm run deploy
 # optional, only used when ALLOW_SERVER_KEYS is "true":
 npx wrangler secret put ANTHROPIC_API_KEY

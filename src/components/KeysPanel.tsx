@@ -19,19 +19,33 @@ export function KeysPanel({ coverage }: KeysPanelProps) {
   }
 
   return (
-    <details
-      open={prompted !== undefined}
-      className="island-shell rounded-2xl px-4 py-3 text-sm"
-    >
-      <summary className="cursor-pointer font-semibold text-[var(--sea-ink)]">
-        API keys
-        <span className="ml-2 font-normal text-[var(--sea-ink-soft)]">
-          Optional. Workers AI models need none. Keys stay in this tab's memory and go out only as
-          request headers.
+    <details open={prompted !== undefined} className="group rounded-lg border border-border text-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+        <span className="text-muted transition group-open:rotate-90" aria-hidden>
+          ›
+        </span>
+        <span className="font-medium">API keys</span>
+        <span className="flex flex-wrap gap-1.5">
+          {BYOK_PROVIDERS.map((provider) => {
+            const ready = snapshot.status[provider.id]?.state === 'set' || coverage[provider.id]
+            return (
+              <span
+                key={provider.id}
+                className={`rounded border px-1.5 py-px font-mono text-[0.7rem] ${
+                  ready ? 'border-accent/40 text-accent' : 'border-border text-muted'
+                }`}
+              >
+                {ready ? '●' : '○'} {provider.id}
+              </span>
+            )
+          })}
+        </span>
+        <span className="ml-auto hidden text-xs text-muted md:inline">
+          Optional. Kept in this tab only, sent as request headers.
         </span>
       </summary>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-px border-t border-border bg-border sm:grid-cols-3">
         {BYOK_PROVIDERS.map((provider) => {
           const status = snapshot.status[provider.id]
           const isPrompted = prompted === provider.id
@@ -42,11 +56,9 @@ export function KeysPanel({ coverage }: KeysPanelProps) {
                 e.preventDefault()
                 void save(provider.id)
               }}
-              className={`rounded-xl border p-3 ${
-                isPrompted ? 'border-[var(--lagoon)]' : 'border-[var(--line)]'
-              }`}
+              className={`bg-bg p-3 ${isPrompted ? 'ring-1 ring-accent ring-inset' : ''}`}
             >
-              <label className="mb-1.5 block font-semibold text-[var(--sea-ink)]" htmlFor={`key-${provider.id}`}>
+              <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor={`key-${provider.id}`}>
                 {provider.label}
               </label>
               {status?.state === 'set' ? (
@@ -55,13 +67,13 @@ export function KeysPanel({ coverage }: KeysPanelProps) {
                   <button
                     type="button"
                     onClick={() => void byok.clear(provider.id)}
-                    className="rounded-lg px-2 py-1 text-[var(--sea-ink-soft)] hover:bg-[var(--link-bg-hover)]"
+                    className="text-xs text-muted hover:text-fg"
                   >
                     Clear
                   </button>
                 </div>
               ) : coverage[provider.id] ? (
-                <p className="m-0 text-[var(--sea-ink-soft)]">Covered by the server.</p>
+                <p className="m-0 text-xs text-muted">Covered by the server.</p>
               ) : (
                 <div className="flex gap-2">
                   <input
@@ -71,11 +83,11 @@ export function KeysPanel({ coverage }: KeysPanelProps) {
                     placeholder={isPrompted ? 'Needed for your last prompt' : 'Paste key'}
                     value={drafts[provider.id] ?? ''}
                     onChange={(e) => setDrafts((d) => ({ ...d, [provider.id]: e.target.value }))}
-                    className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-1"
+                    className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1 font-mono text-xs placeholder:font-sans placeholder:text-muted focus:border-border-strong focus:outline-none"
                   />
                   <button
                     type="submit"
-                    className="rounded-lg bg-[var(--lagoon-deep)] px-3 py-1 font-semibold text-white dark:text-[#0a1418]"
+                    className="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-accent-fg hover:opacity-90"
                   >
                     Save
                   </button>
