@@ -10,6 +10,7 @@ import { DEFAULT_COLUMNS, MAX_COLUMNS, MODELS, REASONING_CHOICES, findModel } fr
 import type { ArenaModel, ArenaModelId, ReasoningChoice } from '#/lib/models'
 import { getServerCoverage } from '#/server/coverage'
 import { submitVote } from '#/server/votes'
+import { SAMPLE_INVOICES } from '#/lib/invoice'
 
 export const Route = createFileRoute('/')({
   loader: () => getServerCoverage(),
@@ -65,6 +66,7 @@ function Arena() {
   const [generation, setGeneration] = useState(0)
   const [reasoning, setReasoning] = useState<ReasoningChoice>('default')
   const [tools, setTools] = useState(false)
+  const [schema, setSchema] = useState(false)
   const [results, setResults] = useState<Record<string, ColumnResult>>({})
 
   // A round is settled once every column that ran it has finished or failed.
@@ -204,16 +206,20 @@ function Arena() {
             placeholder="Ask every model the same thing…"
             className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm placeholder:text-muted focus:outline-none"
           />
-          {tools && (
+          {(tools || schema) && (
             <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-              {TOOL_PROMPTS.map((p) => (
+              {[
+                ...(schema ? SAMPLE_INVOICES.map((s) => ({ label: `Invoice: ${s.label.toLowerCase()}`, prompt: s.prompt })) : []),
+                ...(tools ? TOOL_PROMPTS.map((p) => ({ label: p, prompt: p })) : []),
+              ].map(({ label, prompt: p }) => (
                 <button
-                  key={p}
+                  key={label}
                   type="button"
                   onClick={() => setPrompt(p)}
+                  title={p}
                   className="rounded-full border border-border px-2 py-0.5 text-[0.7rem] text-muted hover:border-accent hover:text-accent"
                 >
-                  {p}
+                  {label}
                 </button>
               ))}
             </div>
@@ -255,6 +261,17 @@ function Arena() {
               }`}
             >
               tools {tools ? 'on' : 'off'}
+            </button>
+            <button
+              type="button"
+              aria-pressed={schema}
+              onClick={() => setSchema((s) => !s)}
+              title="Ask every model to extract an invoice into the same JSON schema, then validate and grade it."
+              className={`rounded-md border px-1.5 py-0.5 font-mono text-[0.7rem] ${
+                schema ? 'border-accent/50 bg-accent-soft text-accent' : 'border-border text-muted hover:text-fg'
+              }`}
+            >
+              schema {schema ? 'on' : 'off'}
             </button>
             <span className="hidden text-xs text-muted xl:inline">
               <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for a new line
@@ -312,6 +329,7 @@ function Arena() {
               stopSignal={stopSignal}
               reasoning={reasoning}
               tools={tools}
+              schema={schema}
               covered={coverage[model.provider]}
               canRemove={columns.length > 1}
               wins={winners.get(col.key) ?? []}

@@ -13,6 +13,7 @@ import { createOpenaiChat } from '@tanstack/ai-openai'
 import { openaiByok } from '@tanstack/ai-openai/byok'
 import { MAX_OUTPUT_TOKENS } from '#/lib/models'
 import type { ArenaModel, ReasoningChoice } from '#/lib/models'
+import { InvoiceSchema } from '#/lib/invoice'
 import { ARENA_TOOLS } from './tools'
 
 // The adapter is typed against its own copy of @cloudflare/workers-types, which
@@ -37,6 +38,8 @@ interface ArenaRequest {
   reasoning: ReasoningChoice
   /** Give the model the test tool kit (weather, currency, orders). */
   tools: boolean
+  /** Ask for the invoice schema instead of free text. */
+  schema: boolean
 }
 
 export function serverKeysAllowed() {
@@ -59,6 +62,7 @@ export function streamArenaChat({
   threadId,
   reasoning,
   tools,
+  schema,
 }: ArenaRequest): Response {
   const abortController = new AbortController()
   const common = {
@@ -66,6 +70,9 @@ export function streamArenaChat({
     threadId,
     systemPrompts: tools ? [SYSTEM_PROMPT, TOOLS_PROMPT] : [SYSTEM_PROMPT],
     ...(tools && { tools: ARENA_TOOLS }),
+    // Structured output streams the JSON as it's generated; the client gets a
+    // typed `structured-output` part with `partial` and, at the end, `data`.
+    ...(schema && { outputSchema: InvoiceSchema, stream: true as const }),
     abortController,
     // `reasoning` is typed per model, but the arena sends one level to all of
     // them. TanStack AI clamps it to the nearest level each model supports.

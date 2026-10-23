@@ -20,6 +20,7 @@ call. Nothing else changes between providers.
 | Reasoning parts rendered separately from answers | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
 | Shared reasoning effort via `chat({ reasoning })`, clamped per model | [`src/server/arena.ts`](src/server/arena.ts) |
 | Tool calling with shared `toolDefinition().server()` tools and the built-in agent loop | [`src/server/tools.ts`](src/server/tools.ts) |
+| Streaming structured output (`outputSchema` + `stream: true`) rendered from the typed `structured-output` part | [`src/lib/invoice.ts`](src/lib/invoice.ts) |
 | Blind voting through TanStack Start server functions + D1, Elo leaderboard | [`src/server/votes.ts`](src/server/votes.ts), [`src/lib/elo.ts`](src/lib/elo.ts) |
 | Time to first token, total time, tokens/s and cost from stream chunks | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
 
@@ -59,6 +60,15 @@ check each answer against the facts. Tool calls render inline with their
 arguments and results, and the sample prompts include a trap ("weather in
 Berlin", a city the tool doesn't know) to see which models admit it and which
 invent a forecast.
+
+## Structured-output test
+
+Turn on **schema** and every model extracts an invoice into the same Zod
+schema, streamed field by field. Each column reports whether the result
+matches the schema and, for the two sample invoices, how many fields match
+the answer key (text compared loosely, numbers to the cent, line items by
+their sum). The messy-email sample has a UK-format date that several models
+get wrong.
 
 ## Blind mode and the leaderboard
 

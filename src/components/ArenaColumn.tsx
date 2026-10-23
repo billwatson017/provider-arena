@@ -7,6 +7,8 @@ import { TextPart } from '@tanstack/ai-react/ui'
 import { byok } from '#/lib/byok'
 import { MODELS, PRICES_AS_OF, PROVIDERS } from '#/lib/models'
 import { addUsage, formatUsd, readUsage, summarize } from '#/lib/metrics'
+import { InvoiceSchema, gradeInvoice, sampleFor } from '#/lib/invoice'
+import type { Invoice } from '#/lib/invoice'
 import type { MetricKey, RunMetrics, RunSummary } from '#/lib/metrics'
 import type { ArenaModel, ArenaModelId, ReasoningChoice } from '#/lib/models'
 
@@ -26,6 +28,8 @@ interface ArenaColumnProps {
   reasoning: ReasoningChoice
   /** Offer the test tool kit to the model. */
   tools: boolean
+  /** Ask for the invoice schema instead of free text. */
+  schema: boolean
   /** The server holds a key for this provider, so no visitor key is needed. */
   covered: boolean
   canRemove: boolean
@@ -48,6 +52,7 @@ export function ArenaColumn({
   stopSignal,
   reasoning,
   tools,
+  schema,
   covered,
   canRemove,
   wins,
@@ -62,8 +67,8 @@ export function ArenaColumn({
   const keys = useByok(byok)
 
   const forwardedProps = useMemo(
-    () => ({ provider: model.provider, model: model.id, reasoning, tools }),
-    [model, reasoning, tools],
+    () => ({ provider: model.provider, model: model.id, reasoning, tools, schema }),
+    [model, reasoning, tools, schema],
   )
   const { messages, sendMessage, reload, stop, isLoading, error } = useChat({
     connection: fetchServerSentEvents('/api/chat'),
@@ -183,8 +188,8 @@ export function ArenaColumn({
               : `Needs your ${PROVIDERS[model.provider].label} API key (kept in this tab only).`}
           </p>
         )}
-        {messages.map((message) => (
-          <Message key={message.id} message={message} />
+        {messages.map((message, i) => (
+          <Message key={message.id} message={message} prompt={promptBefore(messages, i)} />
         ))}
         {error && (
           <p className="m-0 rounded-md border border-danger/30 bg-danger-soft px-2.5 py-2 text-xs text-danger">
@@ -266,7 +271,19 @@ const MARKDOWN_COMPONENTS = {
   a: (props: ComponentProps<'a'>) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 }
 
-function Message({ message }: { message: UIMessage }) {
+/** The user text an assistant message answers, used to find an answer key. */
+function promptBefore(messages: ReadonlyArray<UIMessage>, index: number) {
+  for (let i = index - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.role === 'user') {
+      const part = m.parts.find((p) => p.type === 'text')
+      return part?.type === 'text' ? part.content : undefined
+    }
+  }
+  return undefined
+}
+
+function Message({ message, prompt }: { message: UIMessage; prompt?: string }) {
   if (message.role === 'user') {
     return (
       <div className="border-l-2 border-accent pl-2.5 whitespace-pre-wrap text-muted">
@@ -279,7 +296,8 @@ function Message({ message }: { message: UIMessage }) {
     <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === 'thinking') {
-          const done = message.parts.slice(i + 1).some((p) => p.type === 'text')
+          // Done once anything follows it: text, a tool call, or structured output.
+          const done = message.parts.slice(i + 1).some((p) => p.type !== 'thinking')
           return (
             <details key={i} open={!done} className="group/think text-xs text-muted">
               <summary className="cursor-pointer list-none font-mono text-[0.7rem] select-none [&::-webkit-details-marker]:hidden">
@@ -291,6 +309,9 @@ function Message({ message }: { message: UIMessage }) {
               </p>
             </details>
           )
+        }
+        if (part.type === 'structured-output') {
+          return <StructuredResult key={i} part={part} expected={sampleFor(prompt)?.expected} />
         }
         if (part.type === 'tool-call') {
           const result = message.parts.find(
@@ -337,6 +358,68 @@ function ToolCall({ name, args, output, error }: { name: string; args: string; o
       ) : (
         output !== undefined && <div className="break-all text-muted">→ {compactJson(output)}</div>
       )}
+    </div>
+  )
+}
+
+type StructuredPart = Extract<UIMessage['parts'][number], { type: 'structured-output' }>
+
+const INVOICE_FIELDS = ['vendor', 'invoiceNumber', 'date', 'currency', 'lineItems', 'total'] as const
+
+function formatField(value: unknown) {
+  if (value === undefined) return '…'
+  if (Array.isArray(value)) {
+    return value
+      .map((l: Partial<Invoice['lineItems'][number]>) => `${l?.quantity ?? '?'} × ${l?.description ?? '?'} @ ${l?.unitPrice ?? '?'}`)
+      .join('; ')
+  }
+  return String(value)
+}
+
+/**
+ * One extracted invoice. While streaming it shows the partial object; once
+ * complete it reports whether the object matches the schema and, for the
+ * sample prompts, how many fields match the answer key.
+ */
+function StructuredResult({ part, expected }: { part: StructuredPart; expected?: Invoice }) {
+  const value = (part.status === 'complete' ? part.data : part.partial) as Partial<Invoice> | undefined
+  const parsed = part.status === 'complete' ? InvoiceSchema.safeParse(part.data) : null
+  const grade = parsed?.success && expected ? gradeInvoice(parsed.data, expected) : null
+  const failed = new Set(grade?.checks.filter(([, ok]) => !ok).map(([f]) => f))
+  const invalid = new Set(parsed && !parsed.success ? parsed.error.issues.map((i) => String(i.path[0])) : [])
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-subtle px-2.5 py-1.5 font-mono text-[0.7rem]">
+        <span className="text-muted">invoice</span>
+        {part.status === 'streaming' && <span className="text-muted">streaming…</span>}
+        {part.status === 'error' && <span className="text-danger">{part.errorMessage ?? 'error'}</span>}
+        {parsed && (
+          <span className={parsed.success ? 'text-accent' : 'text-danger'}>
+            {parsed.success ? '✓ schema valid' : '✗ schema invalid'}
+            {grade && ` · ${grade.correct}/${grade.total} correct`}
+          </span>
+        )}
+      </div>
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-2.5 py-2 text-xs">
+        {INVOICE_FIELDS.map((field) => {
+          const bad = failed.has(field) || invalid.has(field)
+          return (
+            <div key={field} className="contents">
+              <dt className={`font-mono text-[0.7rem] ${bad ? 'text-danger' : 'text-muted'}`}>
+                {bad ? '✗ ' : ''}
+                {field}
+              </dt>
+              <dd className="m-0 min-w-0 break-words">
+                {formatField(value?.[field])}
+                {failed.has(field) && expected && (
+                  <span className="block text-[0.7rem] text-muted">expected {formatField(expected[field])}</span>
+                )}
+              </dd>
+            </div>
+          )
+        })}
+      </dl>
     </div>
   )
 }
