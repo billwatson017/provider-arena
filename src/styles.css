@@ -101,3 +101,62 @@
     background: var(--accent-soft);
   }
 }
+
+/*
+ * Markdown answers: the typography plugin, recolored with the theme tokens.
+ * The plugin's rules live in the utilities layer, so these must too, with
+ * `.prose.prose-arena` to outrank its single-class selectors.
+ */
+@layer utilities {
+  .prose.prose-arena {
+    --tw-prose-body: var(--fg);
+    --tw-prose-headings: var(--fg);
+    --tw-prose-lead: var(--muted);
+    --tw-prose-links: var(--accent);
+    --tw-prose-bold: var(--fg);
+    --tw-prose-counters: var(--muted);
+    --tw-prose-bullets: var(--muted);
+    --tw-prose-hr: var(--border);
+    --tw-prose-quotes: var(--muted);
+    --tw-prose-quote-borders: var(--border-strong);
+    --tw-prose-captions: var(--muted);
+    --tw-prose-kbd: var(--fg);
+    --tw-prose-code: var(--fg);
+    --tw-prose-pre-code: var(--fg);
+    --tw-prose-pre-bg: var(--bg-subtle);
+    --tw-prose-th-borders: var(--border-strong);
+    --tw-prose-td-borders: var(--border);
+    line-height: 1.6;
+  }
+
+  .prose.prose-arena > :first-child {
+    margin-top: 0;
+  }
+
+  .prose.prose-arena > :last-child {
+    margin-bottom: 0;
+  }
+
+  .prose.prose-arena :where(code):not(:where(pre *)) {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-subtle);
+    padding: 0.1em 0.35em;
+    font-weight: 500;
+  }
+
+  .prose.prose-arena :where(code):not(:where(pre *))::before,
+  .prose.prose-arena :where(code):not(:where(pre *))::after {
+    content: none;
+  }
+
+  .prose.prose-arena pre {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .prose.prose-arena table {
+    display: block;
+    overflow-x: auto;
+  }
+}

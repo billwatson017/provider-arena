@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ComponentProps } from 'react'
 import { fetchServerSentEvents, useByok, useChat } from '@tanstack/ai-react'
 import type { StreamChunk } from '@tanstack/ai'
 import type { UIMessage } from '@tanstack/ai-react'
+import { TextPart } from '@tanstack/ai-react/ui'
 import { byok } from '#/lib/byok'
 import { MODELS, PRICES_AS_OF, PROVIDERS, estimateCost } from '#/lib/models'
 import type { ArenaModel, ArenaModelId } from '#/lib/models'
@@ -238,6 +240,11 @@ function MetricsBar({ model, metrics, threadCost, isLoading }: MetricsBarProps) 
   )
 }
 
+/** Model output can link anywhere, so links open in a new tab. */
+const MARKDOWN_COMPONENTS = {
+  a: (props: ComponentProps<'a'>) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+}
+
 function Message({ message }: { message: UIMessage }) {
   if (message.role === 'user') {
     return (
@@ -267,9 +274,12 @@ function Message({ message }: { message: UIMessage }) {
         // Some models open with blank lines; trim so columns line up.
         if (part.type === 'text' && part.content.trim()) {
           return (
-            <p key={i} className="m-0 leading-relaxed whitespace-pre-wrap">
-              {part.content.trimStart()}
-            </p>
+            <TextPart
+              key={i}
+              content={part.content.trimStart()}
+              className="prose-arena prose prose-sm max-w-none"
+              components={MARKDOWN_COMPONENTS}
+            />
           )
         }
         return null
