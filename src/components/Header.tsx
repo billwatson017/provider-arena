@@ -16,6 +16,9 @@ export default function Header() {
           <Link to="/" className={navLink} activeProps={{ className: `${navLink} text-fg` }} activeOptions={{ exact: true }}>
             Arena
           </Link>
+          <Link to="/leaderboard" className={navLink} activeProps={{ className: `${navLink} text-fg` }}>
+            Leaderboard
+          </Link>
           <Link to="/about" className={navLink} activeProps={{ className: `${navLink} text-fg` }}>
             About
           </Link>

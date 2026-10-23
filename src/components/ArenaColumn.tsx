@@ -18,6 +18,10 @@ export interface Round {
 interface ArenaColumnProps {
   model: ArenaModel
   round: Round | null
+  /** Rounds up to this id happened before the column joined. */
+  sinceRound: number
+  /** Shown instead of the model name in blind mode. */
+  alias?: string
   stopSignal: number
   reasoning: ReasoningChoice
   /** The server holds a key for this provider, so no visitor key is needed. */
@@ -37,6 +41,8 @@ const CONTENT_CHUNKS = new Set(['TEXT_MESSAGE_CONTENT', 'REASONING_MESSAGE_CONTE
 export function ArenaColumn({
   model,
   round,
+  sinceRound,
+  alias,
   stopSignal,
   reasoning,
   covered,
@@ -76,15 +82,21 @@ export function ArenaColumn({
     },
   })
 
-  // A round is one prompt broadcast to every column. Seeding with the current
-  // round means a column added or switched mid-session waits for the next one.
-  const lastRound = useRef(round?.id ?? null)
+  // A round is one prompt broadcast to every column. A column only answers
+  // rounds newer than the one it joined at.
+  const lastRound = useRef(sinceRound)
   useEffect(() => {
-    if (!round || lastRound.current === round.id) return
-    lastRound.current = round.id
-    setMetrics({ roundId: round.id, startedAt: performance.now() })
-    onRoundStart(round.id)
-    void sendMessage(round.prompt).catch(() => {})
+    if (!round || round.id <= lastRound.current) return
+    // Defer one tick: a column that mounts with a pending round (blind mode,
+    // a new model) would otherwise send before StrictMode's mount/unmount/
+    // mount pass, and useChat's detach on that unmount drops the request.
+    const timer = setTimeout(() => {
+      lastRound.current = round.id
+      setMetrics({ roundId: round.id, startedAt: performance.now() })
+      onRoundStart(round.id)
+      void sendMessage(round.prompt).catch(() => {})
+    })
+    return () => clearTimeout(timer)
   }, [round, sendMessage, onRoundStart])
 
   // Report each round once, when it finishes or stops for good.
@@ -117,25 +129,31 @@ export function ArenaColumn({
   return (
     <section className="flex min-h-[28rem] min-w-0 flex-col bg-bg">
       <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <select
-          value={model.id}
-          onChange={(e) => onModelChange(e.target.value as ArenaModelId)}
-          className="min-w-0 flex-1 cursor-pointer truncate bg-transparent text-sm font-medium focus:outline-none"
-          aria-label="Model"
-        >
-          {Object.entries(PROVIDERS).map(([id, provider]) => (
-            <optgroup key={id} label={provider.free ? `${provider.label} (free)` : provider.label}>
-              {MODELS.filter((m) => m.provider === id).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {'workersPaid' in m ? `${m.label} · Workers Paid plan` : m.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <span className="shrink-0 rounded border border-border px-1.5 py-px font-mono text-[0.65rem] text-muted">
-          {model.provider}
-        </span>
+        {alias ? (
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">{alias}</span>
+        ) : (
+          <>
+          <select
+            value={model.id}
+            onChange={(e) => onModelChange(e.target.value as ArenaModelId)}
+            className="min-w-0 flex-1 cursor-pointer truncate bg-transparent text-sm font-medium focus:outline-none"
+            aria-label="Model"
+          >
+            {Object.entries(PROVIDERS).map(([id, provider]) => (
+              <optgroup key={id} label={provider.free ? `${provider.label} (free)` : provider.label}>
+                {MODELS.filter((m) => m.provider === id).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {'workersPaid' in m ? `${m.label} · Workers Paid plan` : m.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <span className="shrink-0 rounded border border-border px-1.5 py-px font-mono text-[0.65rem] text-muted">
+            {model.provider}
+          </span>
+          </>
+        )}
         {canRemove && (
           <button
             type="button"
