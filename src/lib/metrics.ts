@@ -53,6 +53,17 @@ export function readUsage(model: ArenaModel, usage: unknown): Partial<RunMetrics
   }
 }
 
+/** Adds one step's usage to a round's running totals. */
+export function addUsage(m: RunMetrics, step: Partial<RunMetrics>): Partial<RunMetrics> {
+  if (step.outputTokens === undefined) return {}
+  return {
+    inputTokens: (m.inputTokens ?? 0) + (step.inputTokens ?? 0),
+    outputTokens: (m.outputTokens ?? 0) + step.outputTokens,
+    cost: (m.cost ?? 0) + (step.cost ?? 0),
+    costReported: (m.costReported ?? true) && step.costReported === true,
+  }
+}
+
 export function summarize(m: RunMetrics): RunSummary {
   const ttftMs = m.firstTokenAt !== undefined ? m.firstTokenAt - m.startedAt : undefined
   const totalMs = m.finishedAt !== undefined ? m.finishedAt - m.startedAt : undefined

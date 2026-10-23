@@ -33,6 +33,14 @@ type VoteState = { roundId: number; status: 'saving' | 'saved' } | { roundId: nu
 
 const LETTERS = 'ABCD'
 
+/** Prompts with checkable answers for the test tools in src/server/tools.ts. */
+const TOOL_PROMPTS = [
+  "What's the weather in Tokyo, and how much is 100 USD in EUR?",
+  'Where is order A-1042 and when will it arrive?',
+  'Is it warmer in Sydney or London right now?',
+  "What's the weather in Berlin?",
+]
+
 function shuffle<T>(items: ReadonlyArray<T>): Array<T> {
   const a = [...items]
   for (let i = a.length - 1; i > 0; i--) {
@@ -56,6 +64,7 @@ function Arena() {
   const [stopSignal, setStopSignal] = useState(0)
   const [generation, setGeneration] = useState(0)
   const [reasoning, setReasoning] = useState<ReasoningChoice>('default')
+  const [tools, setTools] = useState(false)
   const [results, setResults] = useState<Record<string, ColumnResult>>({})
 
   // A round is settled once every column that ran it has finished or failed.
@@ -195,7 +204,21 @@ function Arena() {
             placeholder="Ask every model the same thing…"
             className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm placeholder:text-muted focus:outline-none"
           />
-          <div className="flex items-center gap-2 px-2 pb-2">
+          {tools && (
+            <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+              {TOOL_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPrompt(p)}
+                  className="rounded-full border border-border px-2 py-0.5 text-[0.7rem] text-muted hover:border-accent hover:text-accent"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
             <fieldset className="m-0 flex items-center gap-1 border-0 p-0">
               <legend className="sr-only">Reasoning effort</legend>
               <span className="mr-1 text-xs text-muted" title="Sent to every model; each uses the nearest level it supports.">
@@ -222,6 +245,17 @@ function Arena() {
                 ))}
               </div>
             </fieldset>
+            <button
+              type="button"
+              aria-pressed={tools}
+              onClick={() => setTools((t) => !t)}
+              title="Give every model the same test tools: weather, currency conversion, order lookup."
+              className={`rounded-md border px-1.5 py-0.5 font-mono text-[0.7rem] ${
+                tools ? 'border-accent/50 bg-accent-soft text-accent' : 'border-border text-muted hover:text-fg'
+              }`}
+            >
+              tools {tools ? 'on' : 'off'}
+            </button>
             <span className="hidden text-xs text-muted xl:inline">
               <kbd className="font-mono">Enter</kbd> to send · <kbd className="font-mono">Shift+Enter</kbd> for a new line
             </span>
@@ -277,6 +311,7 @@ function Arena() {
               round={round}
               stopSignal={stopSignal}
               reasoning={reasoning}
+              tools={tools}
               covered={coverage[model.provider]}
               canRemove={columns.length > 1}
               wins={winners.get(col.key) ?? []}

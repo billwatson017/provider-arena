@@ -6,7 +6,7 @@ import type { UIMessage } from '@tanstack/ai-react'
 import { TextPart } from '@tanstack/ai-react/ui'
 import { byok } from '#/lib/byok'
 import { MODELS, PRICES_AS_OF, PROVIDERS } from '#/lib/models'
-import { formatUsd, readUsage, summarize } from '#/lib/metrics'
+import { addUsage, formatUsd, readUsage, summarize } from '#/lib/metrics'
 import type { MetricKey, RunMetrics, RunSummary } from '#/lib/metrics'
 import type { ArenaModel, ArenaModelId, ReasoningChoice } from '#/lib/models'
 
@@ -24,6 +24,8 @@ interface ArenaColumnProps {
   alias?: string
   stopSignal: number
   reasoning: ReasoningChoice
+  /** Offer the test tool kit to the model. */
+  tools: boolean
   /** The server holds a key for this provider, so no visitor key is needed. */
   covered: boolean
   canRemove: boolean
@@ -45,6 +47,7 @@ export function ArenaColumn({
   alias,
   stopSignal,
   reasoning,
+  tools,
   covered,
   canRemove,
   wins,
@@ -59,8 +62,8 @@ export function ArenaColumn({
   const keys = useByok(byok)
 
   const forwardedProps = useMemo(
-    () => ({ provider: model.provider, model: model.id, reasoning }),
-    [model, reasoning],
+    () => ({ provider: model.provider, model: model.id, reasoning, tools }),
+    [model, reasoning, tools],
   )
   const { messages, sendMessage, reload, stop, isLoading, error } = useChat({
     connection: fetchServerSentEvents('/api/chat'),
@@ -72,12 +75,10 @@ export function ArenaColumn({
       if (CONTENT_CHUNKS.has(chunk.type)) {
         setMetrics((m) => (m && !m.firstTokenAt ? { ...m, firstTokenAt: now } : m))
       } else if (chunk.type === 'RUN_FINISHED') {
+        // With tools, each step of the agent loop finishes with its own usage,
+        // so a round's totals are the sum over its steps.
         const usage = readUsage(model, chunk.usage)
-        setMetrics((m) => (m ? { ...m, finishedAt: now, ...usage } : m))
-        if (usage.cost !== undefined) {
-          const cost = usage.cost
-          setThreadCost((t) => ({ usd: t.usd + cost, runs: t.runs + 1 }))
-        }
+        setMetrics((m) => (m ? { ...m, finishedAt: now, ...addUsage(m, usage) } : m))
       }
     },
   })
@@ -105,6 +106,8 @@ export function ArenaColumn({
     if (!metrics || isLoading || reported.current === metrics.roundId) return
     if (metrics.finishedAt === undefined && !error) return
     reported.current = metrics.roundId
+    const cost = metrics.cost
+    if (cost !== undefined) setThreadCost((t) => ({ usd: t.usd + cost, runs: t.runs + 1 }))
     onRoundSettled(metrics.roundId, metrics.finishedAt !== undefined ? summarize(metrics) : null)
   }, [metrics, isLoading, error, onRoundSettled])
 
@@ -289,6 +292,12 @@ function Message({ message }: { message: UIMessage }) {
             </details>
           )
         }
+        if (part.type === 'tool-call') {
+          const result = message.parts.find(
+            (p): p is Extract<typeof p, { type: 'tool-result' }> => p.type === 'tool-result' && p.toolCallId === part.id,
+          )
+          return <ToolCall key={part.id} name={part.name} args={part.arguments} output={part.output ?? result?.content} error={result?.error} />
+        }
         // Some models open with blank lines; trim so columns line up.
         if (part.type === 'text' && part.content.trim()) {
           return (
@@ -302,6 +311,32 @@ function Message({ message }: { message: UIMessage }) {
         }
         return null
       })}
+    </div>
+  )
+}
+
+function compactJson(value: unknown) {
+  try {
+    return JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value)
+  } catch {
+    return String(value)
+  }
+}
+
+function ToolCall({ name, args, output, error }: { name: string; args: string; output?: unknown; error?: string }) {
+  const done = output !== undefined || error !== undefined
+  return (
+    <div className="rounded-md border border-border bg-bg-subtle px-2.5 py-1.5 font-mono text-[0.7rem] leading-relaxed">
+      <div className="break-all">
+        <span className={done ? 'text-accent' : 'text-muted'}>{done ? '✓' : '…'}</span>{' '}
+        <span className="font-semibold">{name}</span>
+        <span className="text-muted">({args ? compactJson(args) : ''})</span>
+      </div>
+      {error ? (
+        <div className="text-danger">{error}</div>
+      ) : (
+        output !== undefined && <div className="break-all text-muted">→ {compactJson(output)}</div>
+      )}
     </div>
   )
 }

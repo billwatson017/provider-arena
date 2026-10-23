@@ -32,6 +32,7 @@ export const Route = createFileRoute('/api/chat')({
           reasoning: isReasoningChoice(params.forwardedProps.reasoning)
             ? params.forwardedProps.reasoning
             : 'default',
+          tools: params.forwardedProps.tools === true,
         })
       },
     },

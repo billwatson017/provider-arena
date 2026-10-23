@@ -19,6 +19,7 @@ call. Nothing else changes between providers.
 | Bring your own key (`defineByok`, `useByok`, `getByokKey`, `byokMissing`) | [`src/lib/byok.ts`](src/lib/byok.ts), [`src/components/KeysPanel.tsx`](src/components/KeysPanel.tsx) |
 | Reasoning parts rendered separately from answers | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
 | Shared reasoning effort via `chat({ reasoning })`, clamped per model | [`src/server/arena.ts`](src/server/arena.ts) |
+| Tool calling with shared `toolDefinition().server()` tools and the built-in agent loop | [`src/server/tools.ts`](src/server/tools.ts) |
 | Blind voting through TanStack Start server functions + D1, Elo leaderboard | [`src/server/votes.ts`](src/server/votes.ts), [`src/lib/elo.ts`](src/lib/elo.ts) |
 | Time to first token, total time, tokens/s and cost from stream chunks | [`src/components/ArenaColumn.tsx`](src/components/ArenaColumn.tsx) |
 
@@ -49,6 +50,15 @@ breakdown.
   you nothing.
 - The estimate ignores prompt-cache discounts, and reasoning tokens count as
   output. Update the prices (and `PRICES_AS_OF`) when providers change them.
+
+## Tool-calling test
+
+Turn on **tools** and every model gets the same three server tools: weather,
+currency conversion and order lookup. They return fixed fake data, so you can
+check each answer against the facts. Tool calls render inline with their
+arguments and results, and the sample prompts include a trap ("weather in
+Berlin", a city the tool doesn't know) to see which models admit it and which
+invent a forecast.
 
 ## Blind mode and the leaderboard
 
