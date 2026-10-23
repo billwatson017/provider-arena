@@ -1,18 +1,19 @@
 export default function Footer() {
   return (
-    <footer className="mt-12 border-t border-[var(--line)] px-4 pb-10 pt-8 text-[var(--sea-ink-soft)]">
-      <div className="page-wrap flex flex-col items-center justify-between gap-3 text-center text-sm sm:flex-row sm:text-left">
+    <footer className="mt-12 border-t border-border">
+      <div className="mx-auto flex max-w-[110rem] flex-col gap-2 px-4 py-6 text-xs text-muted sm:flex-row sm:justify-between">
         <p className="m-0">
           An example app for{' '}
-          <a href="https://tanstack.com/ai" target="_blank" rel="noreferrer">
+          <a href="https://tanstack.com/ai" target="_blank" rel="noreferrer" className="underline hover:text-fg">
             TanStack AI
-          </a>
-          , deployed on Cloudflare Workers.
+          </a>{' '}
+          on Cloudflare Workers.
         </p>
         <a
           href="https://github.com/billwatson017/provider-arena"
           target="_blank"
           rel="noreferrer"
+          className="underline hover:text-fg"
         >
           Source on GitHub
         </a>

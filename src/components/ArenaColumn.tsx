@@ -122,12 +122,12 @@ export function ArenaColumn({
   }, [error, blockedOnKey, reload])
 
   return (
-    <section className="island-shell flex min-h-[28rem] min-w-0 flex-col rounded-2xl">
-      <header className="flex items-center gap-2 border-b border-[var(--line)] p-3">
+    <section className="flex min-h-[28rem] min-w-0 flex-col bg-bg">
+      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
         <select
           value={model.id}
           onChange={(e) => onModelChange(e.target.value as ArenaModelId)}
-          className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 py-1.5 text-sm font-semibold text-[var(--sea-ink)]"
+          className="min-w-0 flex-1 cursor-pointer truncate bg-transparent text-sm font-medium focus:outline-none"
           aria-label="Model"
         >
           {Object.entries(PROVIDERS).map(([id, provider]) => (
@@ -140,23 +140,28 @@ export function ArenaColumn({
             </optgroup>
           ))}
         </select>
+        <span className="shrink-0 rounded border border-border px-1.5 py-px font-mono text-[0.65rem] text-muted">
+          {model.provider}
+        </span>
         {canRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="rounded-lg px-2 py-1 text-sm text-[var(--sea-ink-soft)] hover:bg-[var(--link-bg-hover)]"
+            className="shrink-0 rounded p-1 text-muted hover:bg-bg-subtle hover:text-fg"
             aria-label={`Remove ${model.label}`}
           >
-            ✕
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
           </button>
         )}
       </header>
 
       <MetricsBar model={model} metrics={metrics} threadCost={threadCost} isLoading={isLoading} />
 
-      <div className="max-h-[70vh] flex-1 space-y-4 overflow-y-auto p-3 text-sm">
+      <div className="max-h-[70vh] flex-1 space-y-4 overflow-y-auto px-3 py-3 text-sm">
         {messages.length === 0 && (
-          <p className="text-[var(--sea-ink-soft)]">
+          <p className="m-0 text-xs text-muted">
             {PROVIDERS[model.provider].free
               ? 'Runs on Cloudflare Workers AI. No key needed.'
               : covered
@@ -168,7 +173,7 @@ export function ArenaColumn({
           <Message key={message.id} message={message} />
         ))}
         {error && (
-          <p className="rounded-lg border border-red-400/40 bg-red-500/10 p-2 text-red-700 dark:text-red-300">
+          <p className="m-0 rounded-md border border-danger/30 bg-danger-soft px-2.5 py-2 text-xs text-danger">
             {blockedOnKey
               ? `Add your ${PROVIDERS[model.provider].label} key to run this column.`
               : error.message}
@@ -207,28 +212,26 @@ function MetricsBar({ model, metrics, threadCost, isLoading }: MetricsBarProps) 
           (PROVIDERS[model.provider].free ? '. Workers AI includes 10,000 free neurons a day.' : '')
 
   const cells: Array<[string, string, string?]> = [
-    ['First token', ttft !== undefined ? `${Math.round(ttft)} ms` : isLoading ? '…' : '—'],
+    ['TTFT', ttft !== undefined ? `${Math.round(ttft)} ms` : isLoading ? '…' : '—'],
     ['Total', total !== undefined ? `${(total / 1000).toFixed(2)} s` : isLoading ? '…' : '—'],
-    ['Out tokens', metrics?.outputTokens !== undefined ? String(metrics.outputTokens) : '—'],
+    ['Tokens', metrics?.outputTokens !== undefined ? String(metrics.outputTokens) : '—'],
     ['Tok/s', tps !== undefined ? tps.toFixed(0) : '—'],
     ['Cost', metrics?.cost !== undefined ? `${metrics.costReported ? '' : '~'}${formatUsd(metrics.cost)}` : isLoading ? '…' : '—', costTitle],
   ]
 
   return (
-    <div className="border-b border-[var(--line)] px-3 py-2">
-      <dl className="m-0 grid grid-cols-5 gap-1 text-center">
+    <div className="border-b border-border bg-bg-subtle px-3 py-2">
+      <dl className="m-0 grid grid-cols-5 gap-2">
         {cells.map(([label, value, title]) => (
-          <div key={label} title={title} className={title ? 'cursor-help' : undefined}>
-            <dt className="text-[0.65rem] tracking-wide text-[var(--sea-ink-soft)] uppercase">
-              {label}
-            </dt>
-            <dd className="m-0 font-semibold text-[var(--sea-ink)] tabular-nums">{value}</dd>
+          <div key={label} title={title} className={`min-w-0 ${title ? 'cursor-help' : ''}`}>
+            <dt className="truncate text-[0.6rem] font-medium tracking-wider text-muted uppercase">{label}</dt>
+            <dd className="m-0 truncate font-mono text-xs tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>
       {threadCost.runs > 1 && (
-        <p className="m-0 mt-1 text-center text-xs text-[var(--sea-ink-soft)]">
-          Thread total ~{formatUsd(threadCost.usd)} over {threadCost.runs} runs
+        <p className="m-0 mt-1.5 font-mono text-[0.65rem] text-muted">
+          thread ~{formatUsd(threadCost.usd)} · {threadCost.runs} runs
         </p>
       )}
     </div>
@@ -238,21 +241,26 @@ function MetricsBar({ model, metrics, threadCost, isLoading }: MetricsBarProps) 
 function Message({ message }: { message: UIMessage }) {
   if (message.role === 'user') {
     return (
-      <div className="ml-6 rounded-xl bg-[var(--chip-bg)] p-2.5 whitespace-pre-wrap text-[var(--sea-ink)]">
+      <div className="border-l-2 border-accent pl-2.5 whitespace-pre-wrap text-muted">
         {message.parts.map((part, i) => (part.type === 'text' ? <span key={i}>{part.content}</span> : null))}
       </div>
     )
   }
 
   return (
-    <div className="space-y-2 text-[var(--sea-ink)]">
+    <div className="space-y-2">
       {message.parts.map((part, i) => {
         if (part.type === 'thinking') {
           const done = message.parts.slice(i + 1).some((p) => p.type === 'text')
           return (
-            <details key={i} open={!done} className="text-xs text-[var(--sea-ink-soft)]">
-              <summary className="cursor-pointer">{done ? 'Reasoning' : 'Thinking…'}</summary>
-              <p className="mt-1 whitespace-pre-wrap">{part.content}</p>
+            <details key={i} open={!done} className="group/think text-xs text-muted">
+              <summary className="cursor-pointer list-none font-mono text-[0.7rem] select-none [&::-webkit-details-marker]:hidden">
+                <span className="inline-block transition group-open/think:rotate-90">›</span>{' '}
+                {done ? 'reasoning' : 'thinking…'}
+              </summary>
+              <p className="mt-1.5 mb-0 max-h-40 overflow-y-auto border-l border-border pl-2.5 leading-relaxed whitespace-pre-wrap">
+                {part.content}
+              </p>
             </details>
           )
         }
