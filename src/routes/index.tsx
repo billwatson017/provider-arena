@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { ArenaColumn } from '#/components/ArenaColumn'
 import type { Round } from '#/components/ArenaColumn'
 import { KeysPanel } from '#/components/KeysPanel'
 import { byok } from '#/lib/byok'
+import { METRIC_LABELS, roundWinners } from '#/lib/metrics'
+import type { MetricKey, RunSummary } from '#/lib/metrics'
 import { DEFAULT_COLUMNS, MAX_COLUMNS, MODELS, findModel } from '#/lib/models'
 import type { ArenaModelId } from '#/lib/models'
 import { getServerCoverage } from '#/server/coverage'
@@ -12,6 +14,12 @@ export const Route = createFileRoute('/')({
   loader: () => getServerCoverage(),
   component: Arena,
 })
+
+interface ColumnResult {
+  roundId: number
+  settled: boolean
+  summary?: RunSummary | null
+}
 
 const GRID_COLS = ['', 'lg:grid-cols-1', 'lg:grid-cols-2', 'lg:grid-cols-3', 'lg:grid-cols-4']
 
@@ -24,6 +32,25 @@ function Arena() {
   const [round, setRound] = useState<Round | null>(null)
   const [stopSignal, setStopSignal] = useState(0)
   const [generation, setGeneration] = useState(0)
+  const [results, setResults] = useState<Record<string, ColumnResult>>({})
+
+  // Winners are decided once every column that ran this round has settled.
+  const winners = useMemo(() => {
+    const wins = new Map<string, Array<MetricKey>>()
+    if (!round) return wins
+    const ran = columns.filter((c) => results[c.key]?.roundId === round.id)
+    if (ran.length < 2 || ran.some((c) => !results[c.key].settled)) return wins
+    return roundWinners(
+      ran.flatMap((c) => {
+        const summary = results[c.key].summary
+        return summary ? [{ key: c.key, summary }] : []
+      }),
+    )
+  }, [round, columns, results])
+
+  function forgetResult(key: string) {
+    setResults(({ [key]: _, ...rest }) => rest)
+  }
 
   useEffect(() => {
     byok.setServerCoverage(coverage)
@@ -37,8 +64,13 @@ function Arena() {
   }
 
   function addColumn() {
-    const unused = MODELS.find((m) => !columns.some((c) => c.model === m.id)) ?? MODELS[0]
-    setColumns((cols) => [...cols, { key: crypto.randomUUID(), model: unused.id }])
+    // Prefer models that run with no extra setup: free-plan Workers AI first,
+    // then providers the server or the visitor already has a key for.
+    const runnable = (m: (typeof MODELS)[number]) =>
+      m.provider === 'workers-ai' ? !('workersPaid' in m) : coverage[m.provider] || byok.getSnapshot().status[m.provider]?.state === 'set'
+    const unused = MODELS.filter((m) => !columns.some((c) => c.model === m.id))
+    const next = unused.find(runnable) ?? unused[0] ?? MODELS[0]
+    setColumns((cols) => [...cols, { key: crypto.randomUUID(), model: next.id }])
   }
 
   const ghostButton =
@@ -96,6 +128,7 @@ function Arena() {
                 type="button"
                 onClick={() => {
                   setRound(null)
+                  setResults({})
                   setGeneration((g) => g + 1)
                 }}
                 className={ghostButton}
@@ -114,6 +147,14 @@ function Arena() {
         </div>
       </form>
 
+      {winners.size > 0 && round && (
+        <RoundSummary
+          roundId={round.id}
+          winners={winners}
+          labelFor={(key) => findModel(columns.find((c) => c.key === key)?.model)?.label ?? key}
+        />
+      )}
+
       <div
         className={`grid gap-px overflow-hidden rounded-lg border border-border bg-border ${GRID_COLS[columns.length]}`}
       >
@@ -128,14 +169,52 @@ function Arena() {
               stopSignal={stopSignal}
               covered={coverage[model.provider]}
               canRemove={columns.length > 1}
-              onModelChange={(id) =>
-                setColumns((cols) => cols.map((c) => (c.key === col.key ? { ...c, model: id } : c)))
+              wins={winners.get(col.key) ?? []}
+              onRoundStart={(roundId) =>
+                setResults((r) => ({ ...r, [col.key]: { roundId, settled: false } }))
               }
-              onRemove={() => setColumns((cols) => cols.filter((c) => c.key !== col.key))}
+              onRoundSettled={(roundId, summary) =>
+                setResults((r) => ({ ...r, [col.key]: { roundId, settled: true, summary } }))
+              }
+              onModelChange={(id) => {
+                forgetResult(col.key)
+                setColumns((cols) => cols.map((c) => (c.key === col.key ? { ...c, model: id } : c)))
+              }}
+              onRemove={() => {
+                forgetResult(col.key)
+                setColumns((cols) => cols.filter((c) => c.key !== col.key))
+              }}
             />
           )
         })}
       </div>
     </main>
+  )
+}
+
+function RoundSummary({
+  roundId,
+  winners,
+  labelFor,
+}: {
+  roundId: number
+  winners: Map<string, Array<MetricKey>>
+  labelFor: (key: string) => string
+}) {
+  const byMetric = (Object.keys(METRIC_LABELS) as Array<MetricKey>).flatMap((metric) => {
+    const keys = [...winners].filter(([, wins]) => wins.includes(metric)).map(([key]) => key)
+    return keys.length ? [{ metric, labels: keys.map(labelFor) }] : []
+  })
+
+  return (
+    <p className="mt-0 mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted">
+      <span>round {roundId}</span>
+      {byMetric.map(({ metric, labels }) => (
+        <span key={metric}>
+          <span className="text-accent">▲ {METRIC_LABELS[metric]}</span>{' '}
+          <span className="text-fg">{labels.join(', ')}</span>
+        </span>
+      ))}
+    </p>
   )
 }

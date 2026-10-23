@@ -5,23 +5,14 @@ import type { StreamChunk } from '@tanstack/ai'
 import type { UIMessage } from '@tanstack/ai-react'
 import { TextPart } from '@tanstack/ai-react/ui'
 import { byok } from '#/lib/byok'
-import { MODELS, PRICES_AS_OF, PROVIDERS, estimateCost } from '#/lib/models'
+import { MODELS, PRICES_AS_OF, PROVIDERS } from '#/lib/models'
+import { formatUsd, readUsage, summarize } from '#/lib/metrics'
+import type { MetricKey, RunMetrics, RunSummary } from '#/lib/metrics'
 import type { ArenaModel, ArenaModelId } from '#/lib/models'
 
 export interface Round {
   id: number
   prompt: string
-}
-
-interface RunMetrics {
-  startedAt: number
-  firstTokenAt?: number
-  finishedAt?: number
-  inputTokens?: number
-  outputTokens?: number
-  /** USD. The provider's own figure when it reports one, else list price × tokens. */
-  cost?: number
-  costReported?: boolean
 }
 
 interface ArenaColumnProps {
@@ -31,36 +22,16 @@ interface ArenaColumnProps {
   /** The server holds a key for this provider, so no visitor key is needed. */
   covered: boolean
   canRemove: boolean
+  /** Metrics this column won in the latest round. */
+  wins: ReadonlyArray<MetricKey>
+  onRoundStart: (roundId: number) => void
+  /** `summary` is null when the run failed or was stopped before finishing. */
+  onRoundSettled: (roundId: number, summary: RunSummary | null) => void
   onModelChange: (id: ArenaModelId) => void
   onRemove: () => void
 }
 
 const CONTENT_CHUNKS = new Set(['TEXT_MESSAGE_CONTENT', 'REASONING_MESSAGE_CONTENT'])
-
-/** RUN_FINISHED carries TanStack `TokenUsage` or the AG-UI spec `usage[]`. */
-function readUsage(model: ArenaModel, usage: unknown): Partial<RunMetrics> {
-  const entries = Array.isArray(usage) ? usage : usage ? [usage] : []
-  if (!entries.length) return {}
-  let inputTokens = 0
-  let outputTokens = 0
-  let reported: number | undefined
-  for (const u of entries as Array<Record<string, number | undefined>>) {
-    inputTokens += u.promptTokens ?? u.inputTokens ?? 0
-    outputTokens += u.completionTokens ?? u.outputTokens ?? 0
-    if (u.cost !== undefined) reported = (reported ?? 0) + u.cost
-  }
-  return {
-    inputTokens,
-    outputTokens,
-    cost: reported ?? estimateCost(model, inputTokens, outputTokens),
-    costReported: reported !== undefined,
-  }
-}
-
-function formatUsd(usd: number) {
-  if (usd === 0) return '$0'
-  return usd < 0.01 ? `$${usd.toPrecision(2)}` : `$${usd.toFixed(4)}`
-}
 
 export function ArenaColumn({
   model,
@@ -68,6 +39,9 @@ export function ArenaColumn({
   stopSignal,
   covered,
   canRemove,
+  wins,
+  onRoundStart,
+  onRoundSettled,
   onModelChange,
   onRemove,
 }: ArenaColumnProps) {
@@ -102,9 +76,19 @@ export function ArenaColumn({
   useEffect(() => {
     if (!round || lastRound.current === round.id) return
     lastRound.current = round.id
-    setMetrics({ startedAt: performance.now() })
+    setMetrics({ roundId: round.id, startedAt: performance.now() })
+    onRoundStart(round.id)
     void sendMessage(round.prompt).catch(() => {})
-  }, [round, sendMessage])
+  }, [round, sendMessage, onRoundStart])
+
+  // Report each round once, when it finishes or stops for good.
+  const reported = useRef<number | null>(null)
+  useEffect(() => {
+    if (!metrics || isLoading || reported.current === metrics.roundId) return
+    if (metrics.finishedAt === undefined && !error) return
+    reported.current = metrics.roundId
+    onRoundSettled(metrics.roundId, metrics.finishedAt !== undefined ? summarize(metrics) : null)
+  }, [metrics, isLoading, error, onRoundSettled])
 
   useEffect(() => {
     if (stopSignal > 0) stop()
@@ -118,7 +102,8 @@ export function ArenaColumn({
     if (error && blockedOnKey) wasBlocked.current = true
     if (wasBlocked.current && !blockedOnKey) {
       wasBlocked.current = false
-      setMetrics({ startedAt: performance.now() })
+      setMetrics((m) => (m ? { roundId: m.roundId, startedAt: performance.now() } : m))
+      reported.current = null
       void reload()
     }
   }, [error, blockedOnKey, reload])
@@ -159,7 +144,7 @@ export function ArenaColumn({
         )}
       </header>
 
-      <MetricsBar model={model} metrics={metrics} threadCost={threadCost} isLoading={isLoading} />
+      <MetricsBar model={model} metrics={metrics} threadCost={threadCost} isLoading={isLoading} wins={wins} />
 
       <div className="max-h-[70vh] flex-1 space-y-4 overflow-y-auto px-3 py-3 text-sm">
         {messages.length === 0 && (
@@ -191,19 +176,12 @@ interface MetricsBarProps {
   metrics: RunMetrics | null
   threadCost: { usd: number; runs: number }
   isLoading: boolean
+  wins: ReadonlyArray<MetricKey>
 }
 
-function MetricsBar({ model, metrics, threadCost, isLoading }: MetricsBarProps) {
-  const ttft =
-    metrics?.firstTokenAt !== undefined ? metrics.firstTokenAt - metrics.startedAt : undefined
-  const total =
-    metrics?.finishedAt !== undefined ? metrics.finishedAt - metrics.startedAt : undefined
-  const streamSeconds =
-    metrics?.finishedAt !== undefined && metrics.firstTokenAt !== undefined
-      ? (metrics.finishedAt - metrics.firstTokenAt) / 1000
-      : undefined
-  const tps =
-    metrics?.outputTokens && streamSeconds ? metrics.outputTokens / streamSeconds : undefined
+function MetricsBar({ model, metrics, threadCost, isLoading, wins }: MetricsBarProps) {
+  const { ttftMs, totalMs, tokensPerSecond, cost } = metrics ? summarize(metrics) : ({} as RunSummary)
+  const pending = isLoading ? '…' : '—'
 
   const costTitle =
     metrics?.cost === undefined
@@ -213,23 +191,39 @@ function MetricsBar({ model, metrics, threadCost, isLoading }: MetricsBarProps) 
         : `${metrics.inputTokens} in × $${model.price.input}/1M + ${metrics.outputTokens} out × $${model.price.output}/1M, list prices as of ${PRICES_AS_OF}` +
           (PROVIDERS[model.provider].free ? '. Workers AI includes 10,000 free neurons a day.' : '')
 
-  const cells: Array<[string, string, string?]> = [
-    ['TTFT', ttft !== undefined ? `${Math.round(ttft)} ms` : isLoading ? '…' : '—'],
-    ['Total', total !== undefined ? `${(total / 1000).toFixed(2)} s` : isLoading ? '…' : '—'],
-    ['Tokens', metrics?.outputTokens !== undefined ? String(metrics.outputTokens) : '—'],
-    ['Tok/s', tps !== undefined ? tps.toFixed(0) : '—'],
-    ['Cost', metrics?.cost !== undefined ? `${metrics.costReported ? '' : '~'}${formatUsd(metrics.cost)}` : isLoading ? '…' : '—', costTitle],
+  const cells: Array<{ label: string; value: string; metric?: MetricKey; title?: string }> = [
+    { label: 'TTFT', value: ttftMs !== undefined ? `${Math.round(ttftMs)} ms` : pending, metric: 'ttftMs' },
+    { label: 'Total', value: totalMs !== undefined ? `${(totalMs / 1000).toFixed(2)} s` : pending, metric: 'totalMs' },
+    { label: 'Tokens', value: metrics?.outputTokens !== undefined ? String(metrics.outputTokens) : '—' },
+    { label: 'Tok/s', value: tokensPerSecond !== undefined ? tokensPerSecond.toFixed(0) : '—', metric: 'tokensPerSecond' },
+    {
+      label: 'Cost',
+      value: cost !== undefined ? `${metrics?.costReported ? '' : '~'}${formatUsd(cost)}` : pending,
+      metric: 'cost',
+      title: costTitle,
+    },
   ]
 
   return (
-    <div className="border-b border-border bg-bg-subtle px-3 py-2">
-      <dl className="m-0 grid grid-cols-5 gap-2">
-        {cells.map(([label, value, title]) => (
-          <div key={label} title={title} className={`min-w-0 ${title ? 'cursor-help' : ''}`}>
-            <dt className="truncate text-[0.6rem] font-medium tracking-wider text-muted uppercase">{label}</dt>
-            <dd className="m-0 truncate font-mono text-xs tabular-nums">{value}</dd>
-          </div>
-        ))}
+    <div className="@container border-b border-border bg-bg-subtle px-3 py-2">
+      {/* Five across when there's room, otherwise 3 + 2. */}
+      <dl className="m-0 grid grid-cols-3 gap-x-2 gap-y-1.5 @[22rem]:grid-cols-5">
+        {cells.map(({ label, value, metric, title }) => {
+          const won = metric !== undefined && wins.includes(metric)
+          return (
+            <div key={label} title={title} className={`min-w-0 ${title ? 'cursor-help' : ''}`}>
+              <dt
+                className={`truncate text-[0.6rem] font-medium tracking-wider uppercase ${won ? 'text-accent' : 'text-muted'}`}
+              >
+                {won && <span aria-label="best this round">▲ </span>}
+                {label}
+              </dt>
+              <dd className={`m-0 truncate font-mono text-xs tabular-nums ${won ? 'font-semibold text-accent' : ''}`}>
+                {value}
+              </dd>
+            </div>
+          )
+        })}
       </dl>
       {threadCost.runs > 1 && (
         <p className="m-0 mt-1.5 font-mono text-[0.65rem] text-muted">
